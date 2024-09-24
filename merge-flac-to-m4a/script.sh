@@ -45,8 +45,27 @@ fi
 title="$album"
 output_file="$output_dir/${track_number}. ${title}.m4a"  # Final output file in the output directory
 
-# Create a new merged file focusing only on audio streams, placed in the temporary directory
-ffmpeg -f concat -safe 0 -i <(for f in "$tmp_dir"/*.m4a; do echo "file '$f'"; done) -map 0:a -c copy "$tmp_dir/merged_audio.m4a"
+# Define a temporary file in the tmp_dir to store the list of files
+concat_file="$tmp_dir/concat_list.txt"
+
+# Generate the list of files with proper quoting
+echo "Generating file list for concatenation..."
+
+# Use a while loop with find to handle spaces in file names properly
+find "$tmp_dir" -name "*.m4a" | while IFS= read -r file; do
+  # Append each file, correctly quoted, to the concat list
+  echo "file '$file'" >> "$concat_file"
+done
+
+# Sort the concat_file by version (natural numeric sorting)
+sort -V "$concat_file" -o "$concat_file"
+
+# Print the contents of the concat_file to double check the file paths
+echo "Here is the generated file list after sorting:"
+cat "$concat_file"
+
+# Use the temporary file as input for FFmpeg
+ffmpeg -f concat -safe 0 -i "$concat_file" -map 0:a -c copy "$tmp_dir/merged_audio.m4a"
 
 # Initialize chapter file
 chapters_file="$tmp_dir/chapters.txt"
@@ -56,9 +75,17 @@ echo ";FFMETADATA1" > $chapters_file
 cumulative_time=0
 
 # Add chapters based on the length of each source file
-for f in "$tmp_dir"/*.m4a; do
+while IFS= read -r line; do
+    # Extract the file path from the "file '...'" format in the list
+    f=$(echo "$line" | cut -d "'" -f 2)
+
     # Get the title metadata of the file for chapter name
     title_metadata=$(ffmpeg -i "$f" 2>&1 | grep -Eo 'title *:.*' | cut -d ':' -f 2- | xargs)
+
+    # Fallback to file name if no title metadata is found
+    if [ -z "$title_metadata" ]; then
+        title_metadata=$(basename "$f" .m4a)
+    fi
 
     # Get the duration of the file in seconds
     duration=$(ffmpeg -i "$f" 2>&1 | grep "Duration" | awk '{print $2}' | tr -d ,)
@@ -74,7 +101,7 @@ for f in "$tmp_dir"/*.m4a; do
     cumulative_time=$(echo "$cumulative_time + $duration_sec * 1000" | bc)
     echo "END=$cumulative_time" >> $chapters_file
     echo "title=$title_metadata" >> $chapters_file
-done
+done < "$concat_file"
 
 # Add chapters and metadata to the merged file
 ffmpeg -i "$tmp_dir/merged_audio.m4a" -i "$chapters_file" \
