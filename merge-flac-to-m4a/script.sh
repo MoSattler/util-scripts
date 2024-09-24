@@ -87,18 +87,14 @@ while IFS= read -r line; do
         title_metadata=$(basename "$f" .m4a)
     fi
 
-    # Get the duration of the file in seconds
-    duration=$(ffmpeg -i "$f" 2>&1 | grep "Duration" | awk '{print $2}' | tr -d ,)
-
-    # Convert the duration to seconds
-    IFS=: read -r hour min sec <<< "$duration"
-    duration_sec=$(echo "$hour*3600 + $min*60 + $sec" | bc)
+    # Get the duration of the file in milliseconds using ffprobe with high precision
+    duration_ms=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of csv=p=0 "$f" | awk '{printf "%.0f", $1 * 1000}')
 
     # Add a chapter for the current file
     echo "[CHAPTER]" >> $chapters_file
     echo "TIMEBASE=1/1000" >> $chapters_file
     echo "START=$cumulative_time" >> $chapters_file
-    cumulative_time=$(echo "$cumulative_time + $duration_sec * 1000" | bc)
+    cumulative_time=$(echo "$cumulative_time + $duration_ms" | bc)
     echo "END=$cumulative_time" >> $chapters_file
     echo "title=$title_metadata" >> $chapters_file
 done < "$concat_file"
