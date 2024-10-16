@@ -17,4 +17,4 @@ COPY . /app
 RUN chmod +x /app/script.sh
 
 # Define the entrypoint to find subdirectories and run the script in parallel with xargs
-ENTRYPOINT ["bash", "-c", "find /input -mindepth 1 -type d | xargs -P 4 -I {} bash /app/script.sh {} /output"]
+ENTRYPOINT ["bash", "-c", "find /input -mindepth 1 -type d -print0 | xargs -0 -P 4 -I '{}' bash /app/script.sh '{}' /output"]
